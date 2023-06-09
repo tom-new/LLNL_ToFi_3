@@ -16,7 +16,7 @@ Development is hosted on the GitLab server of the Leibniz Supercomputing Centre 
 ## Data
 Input data required by LLNL_ToFi.py are located on the LLNL server:
 
-  * [Data](https://www-gs.llnl.gov/nuclear-threat-reduction/nuclear-explosion-monitoring/global-3d-seismic-tomography)
+  * [Data](https://gs.llnl.gov/nuclear-threat-reduction/nuclear-explosion-monitoring/global-3d-seismic-tomography)
 
 or by email request to simmons27@llnl.gov
 
