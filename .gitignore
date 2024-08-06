@@ -1,0 +1,2 @@
+# ignore R matrix files as the user will download these themselves.
+DATA/R*
