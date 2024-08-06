@@ -251,7 +251,7 @@ def get_coordinates(column_j,radius,gc_lat,lon):
 #--------------------------------------------------------------------------    
 def parallelize(myrank,num_procs,ntot):
 
-    n_sub = ntot / num_procs
+    n_sub = ntot // num_procs
             
     if myrank == num_procs-1:
         my_ib = myrank*n_sub
@@ -262,5 +262,3 @@ def parallelize(myrank,num_procs,ntot):
         
 
     return n_sub, my_ib, my_ie
-
-

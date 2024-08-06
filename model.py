@@ -69,7 +69,7 @@ def read_model():
 
     # USER MODIFICATION REQUIRED
     # Please provide the code to read in your model
-
+    model = []
     # END USER MODIFICATION REQUIRED
 
     return model
@@ -169,7 +169,7 @@ def reparam(comm,radii,gc_lat,lon,reparam):
 
     v_1D = np.zeros(nl)
 
-    for ilyr in xrange(1,nl+1):
+    for ilyr in range(1,nl+1):
 
 
         # Initialize model vectors for that layer
@@ -189,13 +189,13 @@ def reparam(comm,radii,gc_lat,lon,reparam):
     
             if myrank == 0:
                 if ilyr == 1:
-                    print '#'
-                    print '# Reparametrizing the model...'
-                    print '#       ... layer %2d ...' % ilyr
+                    print('#')
+                    print('# Reparametrizing the model...')
+                    print('#       ... layer %2d ...' % ilyr)
                 elif ilyr == nl:
-                    print '#       ... layer %2d' % ilyr
+                    print('#       ... layer %2d' % ilyr)
                 else:
-                    print '#       ... layer %2d ...' % ilyr
+                    print('#       ... layer %2d ...' % ilyr)
 
 
             # Distribute work load on all processors
@@ -226,13 +226,13 @@ def reparam(comm,radii,gc_lat,lon,reparam):
     
             if myrank == 0:
                 if ilyr == 1:
-                    print '#'
-                    print '# Reading the reparametrized model...'
-                    print '#       ... layer %2d ...' % ilyr
+                    print('#')
+                    print('# Reading the reparametrized model...')
+                    print('#       ... layer %2d ...' % ilyr)
                 elif ilyr == nl:
-                    print '#       ... layer %2d' % ilyr
+                    print('#       ... layer %2d' % ilyr)
                 else:
-                    print '#       ... layer %2d ...' % ilyr
+                    print('#       ... layer %2d ...' % ilyr)
 
             m_true = []
             header = ''

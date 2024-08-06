@@ -65,16 +65,16 @@ os.system(''.join(['mkdir -p ', OUTPUT_PATH]))
 
 def usage():
 
-    print ''
-    print 'Usage: python '+sys.argv[0]+' [-n|--no-reparam]"' 
-    print '       or' 
-    print '       mpirun -np {number of processes} python '+sys.argv[0]+' [-n|--no-reparam]"' 
-    print ''
-    print 'Options:'
-    print '         -n | --no-reparam       This flag can be used to skip the reparametrization'
-    print '                                 (e.g., in case one runs the filtering several times'
-    print '                                 for one model that already has been reparametrized).'
-    print ''
+    print('')
+    print('Usage: python '+sys.argv[0]+' [-n|--no-reparam]"' )
+    print('       or' )
+    print('       mpirun -np {number of processes} python '+sys.argv[0]+' [-n|--no-reparam]"' )
+    print('')
+    print('Options:')
+    print('         -n | --no-reparam       This flag can be used to skip the reparametrization')
+    print('                                 (e.g., in case one runs the filtering several times')
+    print('                                 for one model that already has been reparametrized).')
+    print('')
 
     return 0
 
@@ -127,7 +127,7 @@ def main(argv):
     # Get model on LLNL grid
     [slowness_perturbation, v_1D] = model.reparam(comm,radii,gc_lat,lon,reparam)
 
-    for ilyr in xrange(1,nl+1):
+    for ilyr in range(1,nl+1):
 
         n        = []
         row_i    = []
@@ -136,13 +136,13 @@ def main(argv):
         
         if myrank == 0:
             if ilyr == 1:
-                print '#'
-                print '# Filtering the model...'
-                print '#       ... layer %2d ...' % ilyr
+                print('#')
+                print('# Filtering the model...')
+                print('#       ... layer %2d ...' % ilyr)
             elif ilyr == nl:
-                print '#       ... layer %2d' % ilyr
+                print('#       ... layer %2d' % ilyr)
             else:
-                print '#       ... layer %2d ...' % ilyr
+                print('#       ... layer %2d ...' % ilyr)
 
             [row_i,column_j,R_ij] = utils.read_layer_R(ilyr)
 
@@ -174,7 +174,7 @@ def main(argv):
 
         # Loop over entries in file and multiply with corresponding element of the
         # model vector
-	for ip in xrange(my_ib,my_ie+1):
+        for ip in range(my_ib,my_ie+1):
             
             # Compute indices for current point
             [ c_index, l_index ]  = utils.calculate_coord_index(column_j[ip])
