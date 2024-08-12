@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-#Python 2.7.3
+# Python 3.11.9
 
 """
 Author:   Bernhard Schuberth, LMU Munich, Germany (bernhard.schuberth@lmu.de)
