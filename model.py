@@ -1,18 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-#Python 2.7.3
+# Python 3.11.9
 
 """
-Author: Bernhard Schuberth, LMU Munich, Germany (bernhard.schuberth@lmu.de)
-Date:   15.02.2019
+Author:   Bernhard Schuberth, LMU Munich, Germany (bernhard.schuberth@lmu.de)
+Date:     2019-02-15
+Modified: Tom New, The University of Sydney, Australia (tom.new@sydney.edu.au)
+Date:     2024-08-12
 
 LLNL_ToFi
 
 Example routines for determining the values of a seismic velocity model on the 
 grid points of the LLNL-G3D-JPS model.
 
-
-    Copyright (C) 2019  Bernhard Schuberth (bernhard.schuberth@lmu.de)
+    Original work Copyright (C) 2019 Bernhard Schuberth (bernhard.schuberth@lmu.de)
+    Modified work Copyright (C) 2024 Tom New (tom.new@sydney.edu.au)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -27,7 +29,7 @@ grid points of the LLNL-G3D-JPS model.
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
+    
 """
 #-----------------------------------------------------------------------------
 
@@ -35,6 +37,7 @@ from mpi4py import MPI
 import numpy as np
 import os
 import sys
+import pyvista as pv
 
 import ctypes as C
 

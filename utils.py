@@ -3,14 +3,17 @@
 #Python 2.7.3
 
 """
-Author: Bernhard Schuberth, LMU Munich, Germany (bernhard.schuberth@lmu.de)
-Date:   15.02.2019
+Author:   Bernhard Schuberth, LMU Munich, Germany (bernhard.schuberth@lmu.de)
+Date:     2019-02-15
+Modified: Tom New, The University of Sydney, Australia (tom.new@sydney.edu.au)
+Date:     2024-08-12
 
 LLNL_ToFi
 
 Definition of constants.
 
-    Copyright (C) 2019  Bernhard Schuberth (bernhard.schuberth@lmu.de)
+    Original work Copyright (C) 2019 Bernhard Schuberth (bernhard.schuberth@lmu.de)
+    Modified work Copyright (C) 2024 Tom New (tom.new@sydney.edu.au)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
