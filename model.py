@@ -35,7 +35,7 @@ grid points of the LLNL-G3D-JPS model.
 
 from mpi4py import MPI
 import numpy as np
-import os
+from pathlib import Path
 import sys
 
 import ctypes as C

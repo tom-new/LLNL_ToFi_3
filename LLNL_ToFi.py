@@ -46,6 +46,7 @@ already has been reparametrized).
 
 from mpi4py import MPI
 import numpy as np
+from pathlib import Path
 import os
 import sys
 import getopt
@@ -64,7 +65,7 @@ import model
 #-----------------------------------------------------------------------------
 
 # Make sure OUTPUT_PATH exists
-os.system(''.join(['mkdir -p ', OUTPUT_PATH]))
+Path(OUTPUT_PATH).mkdir(exist_ok=True)
 
 def usage():
 
