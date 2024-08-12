@@ -19,9 +19,9 @@ and the values of the R matrix are read from files stored in the directory
 "./DATA" (see README.md for details).
 
 Options:
-The flag "-n|--no-reparam" can be used to skip the reparametrization
+The flag "-n|--no-reparam" can be used to skip the reparametrisation
 (e.g., in case one runs the filtering several times for one model that
-already has been reparametrized).
+already has been reparametrised).
 
 
     Original work Copyright (C) 2019 Bernhard Schuberth (bernhard.schuberth@lmu.de)
@@ -75,9 +75,9 @@ def usage():
     print('       mpirun -np {number of processes} python '+sys.argv[0]+' [-n|--no-reparam]"' )
     print('')
     print('Options:')
-    print('         -n | --no-reparam       This flag can be used to skip the reparametrization')
+    print('         -n | --no-reparam       This flag can be used to skip the reparametrisation')
     print('                                 (e.g., in case one runs the filtering several times')
-    print('                                 for one model that already has been reparametrized).')
+    print('                                 for one model that already has been reparametrised).')
     print('')
 
     return 0

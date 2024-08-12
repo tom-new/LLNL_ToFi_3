@@ -192,7 +192,7 @@ def reparam(comm,radii,gc_lat,lon,reparam):
             if myrank == 0:
                 if ilyr == 1:
                     print('#')
-                    print('# Reparametrizing the model...')
+                    print('# reparametrising the model...')
                     print('#       ... layer %2d ...' % ilyr)
                 elif ilyr == nl:
                     print('#       ... layer %2d' % ilyr)
@@ -217,10 +217,10 @@ def reparam(comm,radii,gc_lat,lon,reparam):
 
             if myrank == 0:
                 # Note: dv = -du*v_1D^2 => dv/v_1D = dln(v) = -du*v_1D
-                # Reparametrized model (dln(v))
+                # reparametrised model (dln(v))
                 m_true = -1. * slowness_perturbation[ilyr-1] * v_1D[ilyr-1]
 
-                # Output reparametrized model
+                # Output reparametrised model
                 header = '# v1D: %12.7f ' % v_1D[ilyr-1]
                 utils.write_layer(ilyr,m_true,radii[ilyr-1]["avg"],lon,gc_lat,OUTFILE_PARM_PREFIX,string=header)
     
@@ -229,7 +229,7 @@ def reparam(comm,radii,gc_lat,lon,reparam):
             if myrank == 0:
                 if ilyr == 1:
                     print('#')
-                    print('# Reading the reparametrized model...')
+                    print('# Reading the reparametrised model...')
                     print('#       ... layer %2d ...' % ilyr)
                 elif ilyr == nl:
                     print('#       ... layer %2d' % ilyr)
@@ -239,7 +239,7 @@ def reparam(comm,radii,gc_lat,lon,reparam):
             m_true = []
             header = ''
             if myrank == 0: 
-                # reparametrized model
+                # reparametrised model
                 [lon_in, gc_lat_in, m_true, header] = utils.read_layer(ilyr,radii[ilyr-1]["avg"],OUTFILE_PARM_PREFIX)
 
             m_true = comm.bcast(m_true, root=0)
