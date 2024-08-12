@@ -37,7 +37,6 @@ from mpi4py import MPI
 import numpy as np
 import os
 import sys
-import pyvista as pv
 
 import ctypes as C
 
