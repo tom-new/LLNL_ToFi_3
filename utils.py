@@ -45,7 +45,8 @@ R_EARTH_KM = 6371.0
 LLNL_PATH = './DATA/'
 LLNL_COORD_FILE = 'LLNL_G3D_JPS.Tessellated.Coordinates.txt' 
 LLNL_DEPTH_FILE = 'LLNL_G3D_JPS.Layer_Depths_min_avg_max.txt'
-LLNL_R_FILE_PREFIX = 'R_Matrix_TomoFilter_Layer'
+LLNL_R_FILE_PREFIX = 'R_Matrix_TomoFilt_Layer'
+FIREDRAKE_PATH = '/Volumes/Grey/phd/ojp-collision'
 
 # Number of radial layers in the upper mantle and transition zone
 nl_UM_TZ = 18
@@ -83,10 +84,10 @@ def read_coords():
     for i in range(len(cl)):
         cline = cl[i].split()
 
-        gd_lat[i]    = np.float(cline[0])
-        lon[i]       = np.float(cline[1])
-        gc_lat[i]    = np.float(cline[2])
-        top_radius[i]= np.float(cline[3])
+        gd_lat[i]    = float(cline[0])
+        lon[i]       = float(cline[1])
+        gc_lat[i]    = float(cline[2])
+        top_radius[i]= float(cline[3])
         
     return gd_lat,lon,gc_lat,top_radius
 
@@ -106,9 +107,9 @@ def read_radii():
         cline = cl[i].split()
 
         radii[i] = {}
-        radii[i]["min"]    = R_EARTH_KM - np.float(cline[2])
-        radii[i]["avg"]    = R_EARTH_KM - np.float(cline[1])
-        radii[i]["max"]    = R_EARTH_KM - np.float(cline[0])
+        radii[i]["min"]    = R_EARTH_KM - float(cline[2])
+        radii[i]["avg"]    = R_EARTH_KM - float(cline[1])
+        radii[i]["max"]    = R_EARTH_KM - float(cline[0])
 
     return radii
 
@@ -127,7 +128,7 @@ def read_radius():
     for i in range(len(cl)):
         cline = cl[i].split()
 
-        radius[i]    = R_EARTH_KM - np.float(cline[0])
+        radius[i]    = R_EARTH_KM - float(cline[0])
 
     return radius
 
@@ -149,9 +150,9 @@ def read_layer_R(ilyr):
     for i in range(len(cl)):
         cline = cl[i].split()
 
-        row_i[i]    = np.int(cline[0])
-        column_j[i] = np.int(cline[1])
-        R_ij[i]     = np.float(cline[2])
+        row_i[i]    = int(cline[0])
+        column_j[i] = int(cline[1])
+        R_ij[i]     = float(cline[2])
         
     return row_i,column_j,R_ij
 
@@ -180,9 +181,9 @@ def read_layer(ilyr,radius,PREFIX):
             header = cline
 
         else:
-            lon[i]   = np.float(cline[0])
-            lat[i]   = np.float(cline[1])
-            value[i] = np.float(cline[2])
+            lon[i]   = float(cline[0])
+            lat[i]   = float(cline[1])
+            value[i] = float(cline[2])
         
     return lon,lat,value, header
 

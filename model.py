@@ -35,6 +35,10 @@ grid points of the LLNL-G3D-JPS model.
 
 from mpi4py import MPI
 import numpy as np
+import pyvista as pv
+import gdrift
+import spherical
+from scipy.interpolate import RBFInterpolator, CubicSpline
 from pathlib import Path
 import sys
 
@@ -43,7 +47,8 @@ import ctypes as C
 
 from utils import (R_EARTH_KM, LLNL_PATH, LLNL_COORD_FILE, LLNL_DEPTH_FILE,
                    LLNL_R_FILE_PREFIX, nl_UM_TZ, np_UM_TZ, np_LM, n_m,
-                   OUTPUT_PATH, OUTFILE_FILT_PREFIX, OUTFILE_PARM_PREFIX)
+                   OUTPUT_PATH, OUTFILE_FILT_PREFIX, OUTFILE_PARM_PREFIX,
+                   FIREDRAKE_PATH)
 
 import utils
 
@@ -56,11 +61,29 @@ def init_model_parallel(comm=0):
 
     comm.barrier()
 
-    model = []
+    snd_model = None
     if myrank == 0:
-        model = read_model() 
+        snd_model = read_model()
 
-    model = comm.bcast(model, root=0)
+    keys = None
+    if myrank == 0:
+        keys = list(snd_model.keys())
+    keys = comm.bcast(keys, root=0)
+
+    rcv_model = {}
+
+    for key in keys:
+        snd_array = None
+        if myrank == 0:
+            snd_array = snd_model[key]
+        snd_array = comm.bcast(snd_array, root=0)
+    
+        rcv_model[key] = snd_array
+
+    model = {
+        "du": RBFInterpolator(rcv_model["coords"], rcv_model["du"], neighbors=32, kernel="linear"),
+        "v_1D": CubicSpline(rcv_model["radii"], rcv_model["v_1D"])
+    }
 
     comm.barrier()
 
@@ -71,7 +94,40 @@ def read_model():
 
     # USER MODIFICATION REQUIRED
     # Please provide the code to read in your model
-    model = []
+    model_path = Path(FIREDRAKE_PATH) / Path("Hall2002/Stage_27_Gplates") / Path("output_4.pvtu")
+    model = pv.read(model_path)
+    model = model.clean()
+    model.points *= R_EARTH_KM / 2.22
+    model.point_data['T'] = model['FullTemperature'] * 3700 + 300
+    model.point_data['dT'] = model['DeltaT'] * (np.max(model['T']) - np.min(model['T']))
+    model.point_data['T_av'] = model['T'] - model['dT']
+    model.point_data['radii'] = np.linalg.norm(model.points, axis=1)
+
+    model.point_data['depth'] = (R_EARTH_KM - model["radii"]) * 1.0e3
+
+    slb_pyrolite = gdrift.ThermodynamicModel('SLB_16', 'pyrolite')
+
+    model.point_data['vp'] = slb_pyrolite.temperature_to_vp(temperature=np.array(model['T']), depth=np.array(model['depth']))
+    model.point_data['vp_av'] = slb_pyrolite.temperature_to_vp(temperature=np.array(model['T_av']), depth=np.array(model['depth']))
+
+    model.point_data['vs'] = slb_pyrolite.temperature_to_vs(temperature=np.array(model['T']), depth=np.array(model['depth']))
+    model.point_data['vs_av'] = slb_pyrolite.temperature_to_vs(temperature=np.array(model['T_av']), depth=np.array(model['depth']))
+
+    keys = ["vp", "vp_av"]
+    
+    coords = np.array(model.points)
+    du = np.array(1/model[keys[0]] - 1/model[keys[1]])
+    radii = np.linspace(model["radii"].min(), model["radii"].max(), num=250)
+    v_1D_coords = np.array([radii, np.zeros_like(radii), np.zeros_like(radii)]).T
+    v_1D = pv.PolyData(v_1D_coords)
+    v_1D = np.array(v_1D.sample(model)["vp_av"])
+
+    model = {
+        "coords": coords,
+        "du": du,
+        "radii": radii,
+        "v_1D": v_1D
+    }
     # END USER MODIFICATION REQUIRED
 
     return model
@@ -93,7 +149,9 @@ def project_slowness_3D(model,radius_avg,lat,lon,radius_min,radius_max,grid_spac
     #       => du = -dv/v_1D^2 = -dln(v)/v_1D
 
     # USER MODIFICATION REQUIRED
-    du = []
+    spherical_coord = spherical.geo2sph([radius_avg,lon,lat])
+    cart_coord = spherical.sph2cart(spherical_coord)
+    du = model["du"]([cart_coord])[0]
     # END USER MODIFICATION REQUIRED
 
     return du
@@ -107,10 +165,10 @@ def model_1D(model,radius):
 
 
     # USER MODIFICATION REQUIRED
-    v_1D = []
+    v_1D = model["v_1D"](radius)
     # END USER MODIFICATION REQUIRED
 
-    return v_1D
+    return float(v_1D)
 
 #--------------------------------------------------------------------------    
 def get_slowness_layer(model,radius_in,lat,lon,grid_spacing):
@@ -211,7 +269,7 @@ def reparam(comm,radii,gc_lat,lon,reparam):
             [  tmp[my_ib:my_ie], v_1D_tmp ] = get_slowness_layer(model,radii[ilyr-1], gc_lat[my_ib:my_ie],lon[my_ib:my_ie],
                                                                             grid_spacing)
 
-            v_1D[ilyr-1] = v_1D_tmp[0]
+            v_1D[ilyr-1] = v_1D_tmp
         
             comm.Allreduce([tmp, MPI.DOUBLE], [slowness_perturbation[ilyr-1], MPI.DOUBLE], op = MPI.SUM)
 
