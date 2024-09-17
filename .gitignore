@@ -1,5 +1,8 @@
 # ignore R matrix files as the user will download these themselves.
 DATA/R*
 
+# ignore OUTPUT_FILES
+OUTPUT_FILES/*
+
 # ignore .pyc files
 *.pyc
