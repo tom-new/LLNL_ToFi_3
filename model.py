@@ -35,6 +35,7 @@ grid points of the LLNL-G3D-JPS model.
 
 from mpi4py import MPI
 import numpy as np
+from numpy.linalg import LinAlgError
 import pyvista as pv
 import gdrift
 import spherical
@@ -81,7 +82,7 @@ def init_model_parallel(comm=0):
         rcv_model[key] = snd_array
 
     model = {
-        "du": RBFInterpolator(rcv_model["coords"], rcv_model["du"], neighbors=32, kernel="linear"),
+        "du": RBFInterpolator(rcv_model["coords"], rcv_model["du"], neighbors=16, kernel="linear"),
         "v_1D": CubicSpline(rcv_model["radii"], rcv_model["v_1D"])
     }
 
@@ -97,7 +98,7 @@ def read_model():
     model_path = Path(FIREDRAKE_PATH) / Path("Hall2002/Stage_27_Gplates") / Path("output_4.pvtu")
     model = pv.read(model_path)
     model = model.clean()
-    model.points *= R_EARTH_KM / 2.22
+    model.points /= 2.22 # normalise the model for rbf interpolation
     model.point_data['T'] = model['FullTemperature'] * 3700 + 300
     model.point_data['dT'] = model['DeltaT'] * (np.max(model['T']) - np.min(model['T']))
     model.point_data['T_av'] = model['T'] - model['dT']
@@ -149,9 +150,14 @@ def project_slowness_3D(model,radius_avg,lat,lon,radius_min,radius_max,grid_spac
     #       => du = -dv/v_1D^2 = -dln(v)/v_1D
 
     # USER MODIFICATION REQUIRED
+    radius_avg /= R_EARTH_KM
     spherical_coord = spherical.geo2sph([radius_avg,lon,lat])
     cart_coord = spherical.sph2cart(spherical_coord)
-    du = model["du"]([cart_coord])[0]
+    try:
+        du = model["du"]([cart_coord])[0]
+    except Exception as e:
+        print(f"Error with coordinate {cart_coord}: {e}")
+        
     # END USER MODIFICATION REQUIRED
 
     return du
@@ -165,6 +171,7 @@ def model_1D(model,radius):
 
 
     # USER MODIFICATION REQUIRED
+    radius /= R_EARTH_KM
     v_1D = model["v_1D"](radius)
     # END USER MODIFICATION REQUIRED
 
