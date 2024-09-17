@@ -40,6 +40,7 @@ import numpy as np
 
 # Radius of Earth in km for normalization
 R_EARTH_KM = 6371.0
+R_CMB_KM = 3501.0
 
 # Path to LLNL-GD3-JPS data (relative path) and filenames:
 LLNL_PATH = './DATA/'
