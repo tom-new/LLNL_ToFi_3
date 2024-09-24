@@ -77,5 +77,5 @@ tofi_data["dVp_percent"].attrs = {
 }
 
 # write to disk
-write_path = Path.home() / Path("OneDrive/phd/firedrake-models/Hall2002_ToFi.nc")
+write_path = Path.home() / Path("OneDrive/phd/firedrake-models/Mann2004_ToFi.nc")
 tofi_data.to_netcdf(write_path)

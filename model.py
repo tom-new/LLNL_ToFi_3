@@ -82,7 +82,7 @@ def init_model_parallel(comm=0):
         rcv_model[key] = snd_array
 
     model = {
-        "du": RBFInterpolator(rcv_model["coords"], rcv_model["du"], neighbors=16, kernel="linear"),
+        "du": RBFInterpolator(rcv_model["coords"], rcv_model["du"], neighbors=64, kernel="linear"),
         "v_1D": CubicSpline(rcv_model["radii"], rcv_model["v_1D"])
     }
 
@@ -95,7 +95,7 @@ def read_model():
 
     # USER MODIFICATION REQUIRED
     # Please provide the code to read in your model
-    model_path = Path(FIREDRAKE_PATH) / Path("Hall2002/Stage_27_Gplates") / Path("output_4.pvtu")
+    model_path = Path(FIREDRAKE_PATH) / Path("Mann2004/Stage_28_Gplates") / Path("output_4.pvtu")
     model = pv.read(model_path)
     model = model.clean()
     model.points /= 2.22 # normalise the model for rbf interpolation
