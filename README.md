@@ -11,7 +11,9 @@ Contributing author: Tom New (EarthByte, School of Geosciences, The University o
 
 ## Development
 
-Development is hosted on [GitHub](https://github.com/tom-new/LLNL_ToFi_3/).
+Development of LLNL_ToFi_3 is hosted on [GitHub](https://github.com/tom-new/LLNL_ToFi_3/).  
+Development of the oringal LLNL_ToFi is hosted on the GitLab server of the Leibniz Supercomputing Centre (LRZ) in the
+[bschuberth/LLNL_ToFi repository](https://gitlab.lrz.de/bschuberth/LLNL_ToFi).
 
 ## Data
 Input data required by *LLNL_ToFi.py* are located on the [LLNL server](https://gs.llnl.gov/nuclear-threat-reduction/nuclear-explosion-monitoring/global-3d-seismic-tomography) or by email request to <simmons27@llnl.gov>.
