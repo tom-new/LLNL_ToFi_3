@@ -224,7 +224,7 @@ def read_model(comm):
 
 
 def project_slowness_3D(
-    model, tree, radius_avg, lat, lon, radius_min, radius_max, grid_spacing
+    model, radius_avg, lat, lon, radius_min, radius_max, grid_spacing
 ):
 
     # This is a dummy routine that needs to be modified by the user.
@@ -308,7 +308,7 @@ def model_1D(model, radius):
 # --------------------------------------------------------------------------
 
 
-def get_slowness_layer(model, tree, radius_in, lat, lon, grid_spacing):
+def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
 
     # This is a dummy routine that illustrates how to get values of a seismic velocity
     # model in terms of slowness perturbation du = 1/v_3D - 1/v_1D onto the grid
@@ -337,7 +337,6 @@ def get_slowness_layer(model, tree, radius_in, lat, lon, grid_spacing):
 
     slowness_perturbation = project_slowness_3D(
         model,
-        tree,
         radius_avg,
         lat,
         lon,
