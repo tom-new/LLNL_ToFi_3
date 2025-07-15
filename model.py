@@ -40,17 +40,28 @@ import pyvista as pv
 import gdrift
 import spherical
 from scipy.interpolate import RBFInterpolator, CubicSpline
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 from pathlib import Path
 import sys
 
 import ctypes as C
 
 
-from utils import (R_EARTH_KM, LLNL_PATH, LLNL_COORD_FILE, LLNL_DEPTH_FILE,
-                   LLNL_R_FILE_PREFIX, nl_UM_TZ, np_UM_TZ, np_LM, n_m,
-                   OUTPUT_PATH, OUTFILE_FILT_PREFIX, OUTFILE_PARM_PREFIX,
-                   FIREDRAKE_PATH)
+from utils import (
+    R_EARTH_KM,
+    LLNL_PATH,
+    LLNL_COORD_FILE,
+    LLNL_DEPTH_FILE,
+    LLNL_R_FILE_PREFIX,
+    nl_UM_TZ,
+    np_UM_TZ,
+    np_LM,
+    n_m,
+    OUTPUT_PATH,
+    OUTFILE_FILT_PREFIX,
+    OUTFILE_PARM_PREFIX,
+    FIREDRAKE_PATH,
+)
 
 import utils
 
@@ -75,21 +86,36 @@ def init_model_parallel(comm=0):
     rcv_model = {}
 
     for key in keys:
-        snd_array = None
         if myrank == 0:
             snd_array = snd_model[key]
-        snd_array = comm.bcast(snd_array, root=0)
+            meta = (snd_array.shape, snd_array.dtype)
+        else:
+            snd_array = None
+            meta = None
+
+        # broadcast the metadata (shape and dtype) of the array
+        meta = comm.bcast(meta, root=0)
+        shape, dtype = meta
+
+        # allocate array
+        if myrank != 0:
+            snd_array = np.empty(shape, dtype=dtype)
+
+        # broadcast the actual array data
+        comm.Bcast(snd_array, root=0)
 
         rcv_model[key] = snd_array
 
     model = pv.UnstructuredGrid(
-        rcv_model["cells"], rcv_model["celltypes"], rcv_model["points"])
+        rcv_model["cells"], rcv_model["celltypes"], rcv_model["points"]
+    )
     model.point_data["du"] = rcv_model["du"]
     model.point_data["v_1D"] = rcv_model["v_1D"]
 
     comm.barrier()
 
     return model
+
 
 # --------------------------------------------------------------------------
 
@@ -100,8 +126,11 @@ def read_model(comm):
     # Please provide the code to read in your model
     myrank = comm.Get_rank()
     print(f"Reading model on process {myrank}")
+    model = "DG_4e8"
+    reconstruction = "C24"
     model_path = Path(
-        "/Volumes/Grey/phd/ojp-collision_dg_2e8/Hall2002") / Path("output_0.pvtu")
+        f"/Volumes/Navy/firedrake_simulations/{model}/{reconstruction}/0Ma_C37_Mu2e20_40_4e8/output_0.pvtu"
+    )
     model = pv.read(model_path)
     model = model.clean()  # prune duplicate mesh points
     model.points /= 2.208  # normalise the model
@@ -111,21 +140,27 @@ def read_model(comm):
             del model.point_data[array_name]
     # calculate T and T_av, dropping arrays after they become unneeded
     model.point_data["T"] = model["FullTemperature_CG"] * 3700 + 300
-    model.point_data["dT"] = model["Temperature_Deviation_CG"] * \
-        (np.max(model["T"]) - np.min(model["T"]))
+    model.point_data["dT"] = model["Temperature_Deviation_CG"] * (
+        np.max(model["T"]) - np.min(model["T"])
+    )
     model.point_data["T_av"] = model["T"] - model["dT"]
     model.point_data["depth"] = (
-        1 - np.linalg.norm(model.points, axis=1)) * R_EARTH_KM * 1.0e3
+        (1 - np.linalg.norm(model.points, axis=1)) * R_EARTH_KM * 1.0e3
+    )
 
     # initialise thermodynamic model
     slb_pyrolite = gdrift.ThermodynamicModel(
-        "SLB_16", "pyrolite", temps=np.linspace(300, 4000), depths=np.linspace(0, 2890e3))
+        "SLB_16",
+        "pyrolite",
+        temps=np.linspace(300, 4000),
+        depths=np.linspace(0, 2890e3),
+    )
 
     # A temperautre profile representing the mantle average temperature
     # This is used to anchor the regularised thermodynamic table (we make sure the seismic speeds are the same at those temperature for the regularised and unregularised table)
     temperature_spline = gdrift.SplineProfile(
-        depth=np.asarray([0., 500e3, 2700e3, 3000e3]),
-        value=np.asarray([300, 1000, 3000, 4000])
+        depth=np.asarray([0.0, 500e3, 2700e3, 3000e3]),
+        value=np.asarray([300, 1000, 3000, 4000]),
     )
 
     # Regularising the table
@@ -133,13 +168,15 @@ def read_model(comm):
     # Default values are between -inf and 0.0; which essentialy prohibits phase jumps that would otherwise render
     # v_s/v_p/rho versus temperature non-unique.
     linear_slb_pyrolite = gdrift.mineralogy.regularise_thermodynamic_table(
-        slb_pyrolite, temperature_spline,
-        regular_range={"v_s": [-0.5, 0], "v_p": [-0.5, 0.], "rho": [-0.5, 0.]}
+        slb_pyrolite,
+        temperature_spline,
+        regular_range={"v_s": [-0.5, 0], "v_p": [-0.5, 0.0], "rho": [-0.5, 0.0]},
     )
 
     cammarano_q_model = "Q6"  # choose model from cammarano et al., 2003
     anelasticity = gdrift.CammaranoAnelasticityModel.from_q_profile(
-        cammarano_q_model)  # Instantiate the anelasticity model
+        cammarano_q_model
+    )  # Instantiate the anelasticity model
     # apply anelastic correction
     linear_anelastic_slb_pyrolite = gdrift.apply_anelastic_correction(
         linear_slb_pyrolite, anelasticity
@@ -154,11 +191,14 @@ def read_model(comm):
         raise ValueError("v must be 'vp' or 'vs'")
 
     model.point_data["v_3D"] = temperature_to_v(
-        temperature=np.array(model['T']), depth=np.array(model['depth']))
+        temperature=np.array(model["T"]), depth=np.array(model["depth"])
+    )
     model.point_data["v_1D"] = temperature_to_v(
-        temperature=np.array(model['T_av']), depth=np.array(model['depth']))
-    model.point_data["du"] = 1/model["v_3D"] - 1 / \
-        model["v_1D"]  # calculate slowness perturbation
+        temperature=np.array(model["T_av"]), depth=np.array(model["depth"])
+    )
+    model.point_data["du"] = (
+        1 / model["v_3D"] - 1 / model["v_1D"]
+    )  # calculate slowness perturbation
 
     # drop unneeded point_data arrays
     for array_name in model.point_data.keys():
@@ -170,7 +210,7 @@ def read_model(comm):
         "celltypes": np.array(model.celltypes),
         "points": np.array(model.points),
         "du": np.array(model["du"]),
-        "v_1D": np.array(model["v_1D"])
+        "v_1D": np.array(model["v_1D"]),
     }
 
     print(f"Model loaded on process {myrank}")
@@ -179,10 +219,13 @@ def read_model(comm):
 
     return model
 
+
 # --------------------------------------------------------------------------
 
 
-def project_slowness_3D(model, radius_avg, lat, lon, radius_min, radius_max, grid_spacing):
+def project_slowness_3D(
+    model, tree, radius_avg, lat, lon, radius_min, radius_max, grid_spacing
+):
 
     # This is a dummy routine that needs to be modified by the user.
 
@@ -202,9 +245,7 @@ def project_slowness_3D(model, radius_avg, lat, lon, radius_min, radius_max, gri
 
     # Convert LLNL rad/lon/lat to cartesian coordinates
     cart_coord = spherical.sph2cart(
-        spherical.geo2sph(
-            np.column_stack((radius_avg, lon, lat))
-        )
+        spherical.geo2sph(np.column_stack((radius_avg, lon, lat)))
     )
     # I am assuming radius_min, and radius_max are constant per layer for now
     assert radius_min.min() == radius_min.max()
@@ -212,22 +253,23 @@ def project_slowness_3D(model, radius_avg, lat, lon, radius_min, radius_max, gri
 
     within_radius_min_max = np.logical_and(
         model.preprocess["rads"] >= radius_min.min() / R_EARTH_KM,
-        model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM
+        model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM,
     )
 
     # broaden the search radius until there are points
     thickness = radius_max.max() - radius_min.min()
     while np.count_nonzero(within_radius_min_max) == 0:
-        radius_min -= thickness/4
-        radius_max += thickness/4
+        radius_min -= thickness / 4
+        radius_max += thickness / 4
         within_radius_min_max = np.logical_and(
             model.preprocess["rads"] >= radius_min.min() / R_EARTH_KM,
-            model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM
+            model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM,
         )
 
     # Build an array
-    dists, inds = cKDTree(np.asarray(
-        model.points[within_radius_min_max])).query(cart_coord, k=1000)
+    dists, inds = KDTree(np.asarray(model.points[within_radius_min_max])).query(
+        cart_coord, k=1000
+    )
 
     # Look for values withing the grid spacing
     within_grid_spacing = dists < grid_spacing / R_EARTH_KM
@@ -235,17 +277,14 @@ def project_slowness_3D(model, radius_avg, lat, lon, radius_min, radius_max, gri
 
     # Do an interpolation of values within grid spacing
     if True:
-        du = (
-            np.sum(
-                1 / dists *
-                model["du"][within_radius_min_max][inds],
-                axis=1
-            ) / np.sum(1 / dists, axis=1)
-        )
+        du = np.sum(
+            1 / dists * model["du"][within_radius_min_max][inds], axis=1
+        ) / np.sum(1 / dists, axis=1)
     else:
         du = np.average(model["du"][within_radius_min_max][inds], axis=1)
 
     return du
+
 
 # --------------------------------------------------------------------------
 
@@ -258,17 +297,18 @@ def model_1D(model, radius):
 
     # USER MODIFICATION REQUIRED
     radius /= R_EARTH_KM
-    point = pv.PolyData([[radius, 0., 0.]])
+    point = pv.PolyData([[radius, 0.0, 0.0]])
     v_1D = point.sample(model)["v_1D"][0]
     del point
     # END USER MODIFICATION REQUIRED
 
     return v_1D
 
+
 # --------------------------------------------------------------------------
 
 
-def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
+def get_slowness_layer(model, tree, radius_in, lat, lon, grid_spacing):
 
     # This is a dummy routine that illustrates how to get values of a seismic velocity
     # model in terms of slowness perturbation du = 1/v_3D - 1/v_1D onto the grid
@@ -279,7 +319,7 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
     # This routine expects radius to be given in km.
     # Thus, normalize the radii if necessary (uncomment the line below if applicable).
     # r_norm = R_EARTH_KM
-    r_norm = 1.  # no radius normalization by default
+    r_norm = 1.0  # no radius normalization by default
     # END USER MODIFICATION REQUIRED
 
     # turn input radius into a vector if not already provided in this form
@@ -297,6 +337,7 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
 
     slowness_perturbation = project_slowness_3D(
         model,
+        tree,
         radius_avg,
         lat,
         lon,
@@ -304,7 +345,7 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
         radius_min if all(radius_min != radius_avg) else radius_avg - 10.0,
         # Make sure the thickness is non-zero
         radius_max if all(radius_max != radius_avg) else radius_avg + 10.0,
-        grid_spacing
+        grid_spacing,
     )
 
     return slowness_perturbation, v_1D
@@ -332,89 +373,108 @@ def reparam(comm, radii, gc_lat, lon, reparam):
     # pre-process model in order to speed up the interpolation
     preprocess_model(model)
 
-    for ilyr in range(1, nl+1):
+    # build a KDTree of the Firedrake mesh points for nearest-neighbor search
+    # tree = KDTree(np.asarray(model["points"]))
+
+    for ilyr in range(1, nl + 1):
 
         # Initialize model vectors for that layer
         if ilyr <= nl_UM_TZ:
             cnp = np_UM_TZ
             # nominal grid spacing is 1 degree in the upper mantle and transition zone
-            grid_spacing = 111.
+            grid_spacing = 111.0
         else:
             cnp = np_LM
             # nominal grid spacing is 2 degree in the lower mantle
-            grid_spacing = 222.
+            grid_spacing = 222.0
 
-        slowness_perturbation[ilyr-1] = np.zeros(cnp, dtype='float64')
+        slowness_perturbation[ilyr - 1] = np.zeros(cnp, dtype="float64")
 
         if reparam:
 
             if myrank == 0:
                 if ilyr == 1:
-                    print('#')
-                    print('# reparametrising the model...')
-                    print('#       ... layer %2d ...' % ilyr)
+                    print("#")
+                    print("# reparametrising the model...")
+                    print("#       ... layer %2d ..." % ilyr)
                 elif ilyr == nl:
-                    print('#       ... layer %2d' % ilyr)
+                    print("#       ... layer %2d" % ilyr)
                 else:
-                    print('#       ... layer %2d ...' % ilyr)
+                    print("#       ... layer %2d ..." % ilyr)
 
             # Distribute work load on all processors
             [cnp_sub, my_ib, my_ie] = utils.parallelize(myrank, num_procs, cnp)
 
-            m_true = np.zeros(cnp, dtype='float64')
-            tmp = np.zeros(cnp, dtype='float64')
+            m_true = np.zeros(cnp, dtype="float64")
+            tmp = np.zeros(cnp, dtype="float64")
 
             # Get slowness and 1-D velocity at current location
-            [tmp[my_ib:my_ie], v_1D_tmp] = get_slowness_layer(model, radii[ilyr-1], gc_lat[my_ib:my_ie], lon[my_ib:my_ie],
-                                                              grid_spacing)
+            [tmp[my_ib:my_ie], v_1D_tmp] = get_slowness_layer(
+                model,
+                radii[ilyr - 1],
+                gc_lat[my_ib:my_ie],
+                lon[my_ib:my_ie],
+                grid_spacing,
+            )
 
-            v_1D[ilyr-1] = v_1D_tmp
+            v_1D[ilyr - 1] = v_1D_tmp
 
-            comm.Allreduce([tmp, MPI.DOUBLE], [
-                           slowness_perturbation[ilyr-1], MPI.DOUBLE], op=MPI.SUM)
+            comm.Allreduce(
+                [tmp, MPI.DOUBLE],
+                [slowness_perturbation[ilyr - 1], MPI.DOUBLE],
+                op=MPI.SUM,
+            )
 
             if myrank == 0:
                 # Note: dv = -du*v_1D^2 => dv/v_1D = dln(v) = -du*v_1D
                 # reparametrised model (dln(v))
-                m_true = -1. * slowness_perturbation[ilyr-1] * v_1D[ilyr-1]
+                m_true = -1.0 * slowness_perturbation[ilyr - 1] * v_1D[ilyr - 1]
 
                 # Output reparametrised model
-                header = '# v1D: %12.7f ' % v_1D[ilyr-1]
+                header = "# v1D: %12.7f " % v_1D[ilyr - 1]
                 utils.write_layer(
-                    ilyr, m_true, radii[ilyr-1]["avg"], lon, gc_lat, OUTFILE_PARM_PREFIX, string=header)
+                    ilyr,
+                    m_true,
+                    radii[ilyr - 1]["avg"],
+                    lon,
+                    gc_lat,
+                    OUTFILE_PARM_PREFIX,
+                    string=header,
+                )
 
         else:
 
             if myrank == 0:
                 if ilyr == 1:
-                    print('#')
-                    print('# Reading the reparametrised model...')
-                    print('#       ... layer %2d ...' % ilyr)
+                    print("#")
+                    print("# Reading the reparametrised model...")
+                    print("#       ... layer %2d ..." % ilyr)
                 elif ilyr == nl:
-                    print('#       ... layer %2d' % ilyr)
+                    print("#       ... layer %2d" % ilyr)
                 else:
-                    print('#       ... layer %2d ...' % ilyr)
+                    print("#       ... layer %2d ..." % ilyr)
 
             m_true = []
-            header = ''
+            header = ""
             if myrank == 0:
                 # reparametrised model
                 [lon_in, gc_lat_in, m_true, header] = utils.read_layer(
-                    ilyr, radii[ilyr-1]["avg"], OUTFILE_PARM_PREFIX)
+                    ilyr, radii[ilyr - 1]["avg"], OUTFILE_PARM_PREFIX
+                )
 
             m_true = comm.bcast(m_true, root=0)
             header = comm.bcast(header, root=0)
 
-            v_1D[ilyr-1] = header[-1]
+            v_1D[ilyr - 1] = header[-1]
 
             # Convert velocity to slowness perturbation du
             # dv = -du*v_1D^2 => dv/v_1D = dln(v) = -du*v_1D, du = -dln(v)/v_1D
-            slowness_perturbation[ilyr-1] = -1. * m_true / v_1D[ilyr-1]
+            slowness_perturbation[ilyr - 1] = -1.0 * m_true / v_1D[ilyr - 1]
 
     return slowness_perturbation, v_1D
 
 
 def preprocess_model(model):
     model.preprocess = {
-        "rads": np.sqrt(np.sum(model.points ** 2, axis=1)),
+        "rads": np.sqrt(np.sum(model.points**2, axis=1)),
     }
