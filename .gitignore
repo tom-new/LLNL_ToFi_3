@@ -9,3 +9,6 @@ OUTPUT_FILES/*
 
 # ignore python cache
 __pycache__/*
+
+# ignore .vscode directory
+.vscode/*
