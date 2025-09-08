@@ -109,8 +109,10 @@ def init_model_parallel(comm=0):
     model = pv.UnstructuredGrid(
         rcv_model["cells"], rcv_model["celltypes"], rcv_model["points"]
     )
-    model.point_data["du"] = rcv_model["du"]
-    model.point_data["v_1D"] = rcv_model["v_1D"]
+    model.point_data["du_s"] = rcv_model["du_s"]
+    model.point_data["v_1D_s"] = rcv_model["v_1D_s"]
+    model.point_data["du_p"] = rcv_model["du_p"]
+    model.point_data["v_1D_p"] = rcv_model["v_1D_p"]
 
     comm.barrier()
 
@@ -126,10 +128,10 @@ def read_model(comm):
     # Please provide the code to read in your model
     myrank = comm.Get_rank()
     print(f"Reading model on process {myrank}")
-    model = "DG_4e8"
-    reconstruction = "C24"
+    model = "HT_4e8"
+    reconstruction = "Z22"
     model_path = Path(
-        f"/Volumes/Navy/firedrake_simulations/{model}/{reconstruction}/0Ma_C37_Mu2e20_40_4e8/output_0.pvtu"
+        f"/Volumes/Navy/firedrake_simulations/{model}/{reconstruction}/0Ma/output_0.pvtu"
     )
     model = pv.read(model_path)
     model = model.clean()  # prune duplicate mesh points
@@ -182,35 +184,39 @@ def read_model(comm):
         linear_slb_pyrolite, anelasticity
     )
 
-    v = "vp"  # choose vp or vs
-    if v == "vp":
-        temperature_to_v = linear_anelastic_slb_pyrolite.temperature_to_vp
-    elif v == "vs":
-        temperature_to_v = linear_anelastic_slb_pyrolite.temperature_to_vs
-    else:
-        raise ValueError("v must be 'vp' or 'vs'")
-
-    model.point_data["v_3D"] = temperature_to_v(
+    model.point_data["v_3D_s"] = linear_anelastic_slb_pyrolite.temperature_to_vs(
         temperature=np.array(model["T"]), depth=np.array(model["depth"])
     )
-    model.point_data["v_1D"] = temperature_to_v(
+    model.point_data["v_1D_s"] = linear_anelastic_slb_pyrolite.temperature_to_vs(
         temperature=np.array(model["T_av"]), depth=np.array(model["depth"])
     )
-    model.point_data["du"] = (
-        1 / model["v_3D"] - 1 / model["v_1D"]
+    model.point_data["du_s"] = (
+        1 / model["v_3D_s"] - 1 / model["v_1D_s"]
+    )  # calculate slowness perturbation
+
+    model.point_data["v_3D_p"] = linear_anelastic_slb_pyrolite.temperature_to_vp(
+        temperature=np.array(model["T"]), depth=np.array(model["depth"])
+    )
+    model.point_data["v_1D_p"] = linear_anelastic_slb_pyrolite.temperature_to_vp(
+        temperature=np.array(model["T_av"]), depth=np.array(model["depth"])
+    )
+    model.point_data["du_p"] = (
+        1 / model["v_3D_p"] - 1 / model["v_1D_p"]
     )  # calculate slowness perturbation
 
     # drop unneeded point_data arrays
     for array_name in model.point_data.keys():
-        if array_name not in ["du", "v_1D"]:
+        if array_name not in ["du_s", "v_1D_s", "du_p", "v_1D_p"]:
             del model.point_data[array_name]
 
     model = {
         "cells": np.array(model.cells),
         "celltypes": np.array(model.celltypes),
         "points": np.array(model.points),
-        "du": np.array(model["du"]),
-        "v_1D": np.array(model["v_1D"]),
+        "du_s": np.array(model["du_s"]),
+        "v_1D_s": np.array(model["v_1D_s"]),
+        "du_p": np.array(model["du_p"]),
+        "v_1D_p": np.array(model["v_1D_p"]),
     }
 
     print(f"Model loaded on process {myrank}")
@@ -277,13 +283,17 @@ def project_slowness_3D(
 
     # Do an interpolation of values within grid spacing
     if True:
-        du = np.sum(
-            1 / dists * model["du"][within_radius_min_max][inds], axis=1
+        du_s = np.sum(
+            1 / dists * model["du_s"][within_radius_min_max][inds], axis=1
+        ) / np.sum(1 / dists, axis=1)
+        du_p = np.sum(
+            1 / dists * model["du_p"][within_radius_min_max][inds], axis=1
         ) / np.sum(1 / dists, axis=1)
     else:
-        du = np.average(model["du"][within_radius_min_max][inds], axis=1)
+        du_s = np.average(model["du_s"][within_radius_min_max][inds], axis=1)
+        du_p = np.average(model["du_p"][within_radius_min_max][inds], axis=1)
 
-    return du
+    return du_s, du_p
 
 
 # --------------------------------------------------------------------------
@@ -298,11 +308,12 @@ def model_1D(model, radius):
     # USER MODIFICATION REQUIRED
     radius /= R_EARTH_KM
     point = pv.PolyData([[radius, 0.0, 0.0]])
-    v_1D = point.sample(model)["v_1D"][0]
+    v_1D_s = point.sample(model)["v_1D_s"][0]
+    v_1D_p = point.sample(model)["v_1D_p"][0]
     del point
     # END USER MODIFICATION REQUIRED
 
-    return v_1D
+    return v_1D_s, v_1D_p
 
 
 # --------------------------------------------------------------------------
@@ -333,9 +344,9 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
         radius_max = radius_in["max"] / r_norm
 
     # Get 1-D seismic velocity for that layer
-    v_1D = model_1D(model, radius_avg[0])
+    v_1D_s, v_1D_p = model_1D(model, radius_avg[0])
 
-    slowness_perturbation = project_slowness_3D(
+    slowness_perturbation_s, slowness_perturbation_p = project_slowness_3D(
         model,
         radius_avg,
         lat,
@@ -347,7 +358,7 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
         grid_spacing,
     )
 
-    return slowness_perturbation, v_1D
+    return slowness_perturbation_s, v_1D_s, slowness_perturbation_p, v_1D_p
 
 
 # --------------------------------------------------------------------------
@@ -359,7 +370,8 @@ def reparam(comm, radii, gc_lat, lon, reparam):
     # Get number of layers
     nl = len(radii)
 
-    slowness_perturbation = {}
+    slowness_perturbation_s = {}
+    slowness_perturbation_p = {}
 
     if reparam:
         # USER MODIFICATION REQUIRED
@@ -367,7 +379,8 @@ def reparam(comm, radii, gc_lat, lon, reparam):
         model = init_model_parallel(comm)
         # END USER MODIFICATION REQUIRED
 
-    v_1D = np.zeros(nl)
+    v_1D_s = np.zeros(nl)
+    v_1D_p = np.zeros(nl)
 
     # pre-process model in order to speed up the interpolation
     preprocess_model(model)
@@ -387,7 +400,8 @@ def reparam(comm, radii, gc_lat, lon, reparam):
             # nominal grid spacing is 2 degree in the lower mantle
             grid_spacing = 222.0
 
-        slowness_perturbation[ilyr - 1] = np.zeros(cnp, dtype="float64")
+        slowness_perturbation_s[ilyr - 1] = np.zeros(cnp, dtype="float64")
+        slowness_perturbation_p[ilyr - 1] = np.zeros(cnp, dtype="float64")
 
         if reparam:
 
@@ -404,41 +418,63 @@ def reparam(comm, radii, gc_lat, lon, reparam):
             # Distribute work load on all processors
             [cnp_sub, my_ib, my_ie] = utils.parallelize(myrank, num_procs, cnp)
 
-            m_true = np.zeros(cnp, dtype="float64")
-            tmp = np.zeros(cnp, dtype="float64")
+            m_true_s = np.zeros(cnp, dtype="float64")
+            m_true_p = np.zeros(cnp, dtype="float64")
+            tmp_s = np.zeros(cnp, dtype="float64")
+            tmp_p = np.zeros(cnp, dtype="float64")
 
             # Get slowness and 1-D velocity at current location
-            [tmp[my_ib:my_ie], v_1D_tmp] = get_slowness_layer(
-                model,
-                radii[ilyr - 1],
-                gc_lat[my_ib:my_ie],
-                lon[my_ib:my_ie],
-                grid_spacing,
+            [tmp_s[my_ib:my_ie], v_1D_s_tmp, tmp_p[my_ib:my_ie], v_1D_p_tmp] = (
+                get_slowness_layer(
+                    model,
+                    radii[ilyr - 1],
+                    gc_lat[my_ib:my_ie],
+                    lon[my_ib:my_ie],
+                    grid_spacing,
+                )
             )
 
-            v_1D[ilyr - 1] = v_1D_tmp
+            v_1D_s[ilyr - 1] = v_1D_s_tmp
+            v_1D_p[ilyr - 1] = v_1D_p_tmp
 
             comm.Allreduce(
-                [tmp, MPI.DOUBLE],
-                [slowness_perturbation[ilyr - 1], MPI.DOUBLE],
+                [tmp_s, MPI.DOUBLE],
+                [slowness_perturbation_s[ilyr - 1], MPI.DOUBLE],
+                op=MPI.SUM,
+            )
+
+            comm.Allreduce(
+                [tmp_p, MPI.DOUBLE],
+                [slowness_perturbation_p[ilyr - 1], MPI.DOUBLE],
                 op=MPI.SUM,
             )
 
             if myrank == 0:
                 # Note: dv = -du*v_1D^2 => dv/v_1D = dln(v) = -du*v_1D
                 # reparametrised model (dln(v))
-                m_true = -1.0 * slowness_perturbation[ilyr - 1] * v_1D[ilyr - 1]
+                m_true_s = -1.0 * slowness_perturbation_s[ilyr - 1] * v_1D_s[ilyr - 1]
+                m_true_p = -1.0 * slowness_perturbation_p[ilyr - 1] * v_1D_p[ilyr - 1]
 
                 # Output reparametrised model
-                header = "# v1D: %12.7f " % v_1D[ilyr - 1]
+                header_s = "# v1D: %12.7f " % v_1D_s[ilyr - 1]
+                header_p = "# v1D: %12.7f " % v_1D_p[ilyr - 1]
                 utils.write_layer(
                     ilyr,
-                    m_true,
+                    m_true_s,
                     radii[ilyr - 1]["avg"],
                     lon,
                     gc_lat,
-                    OUTFILE_PARM_PREFIX,
-                    string=header,
+                    OUTFILE_PARM_PREFIX + "_s",
+                    string=header_s,
+                )
+                utils.write_layer(
+                    ilyr,
+                    m_true_p,
+                    radii[ilyr - 1]["avg"],
+                    lon,
+                    gc_lat,
+                    OUTFILE_PARM_PREFIX + "_p",
+                    string=header_p,
                 )
 
         else:
@@ -453,24 +489,33 @@ def reparam(comm, radii, gc_lat, lon, reparam):
                 else:
                     print("#       ... layer %2d ..." % ilyr)
 
-            m_true = []
-            header = ""
+            m_true_s = []
+            m_true_p = []
+            header_s = ""
+            header_p = ""
             if myrank == 0:
                 # reparametrised model
-                [lon_in, gc_lat_in, m_true, header] = utils.read_layer(
-                    ilyr, radii[ilyr - 1]["avg"], OUTFILE_PARM_PREFIX
+                [lon_in, gc_lat_in, m_true_s, header_s] = utils.read_layer(
+                    ilyr, radii[ilyr - 1]["avg"], OUTFILE_PARM_PREFIX + "_s"
+                )
+                [lon_in, gc_lat_in, m_true_p, header_p] = utils.read_layer(
+                    ilyr, radii[ilyr - 1]["avg"], OUTFILE_PARM_PREFIX + "_p"
                 )
 
-            m_true = comm.bcast(m_true, root=0)
-            header = comm.bcast(header, root=0)
+            m_true_s = comm.bcast(m_true_s, root=0)
+            m_true_p = comm.bcast(m_true_p, root=0)
+            header_s = comm.bcast(header_s, root=0)
+            header_p = comm.bcast(header_p, root=0)
 
-            v_1D[ilyr - 1] = header[-1]
+            v_1D_s[ilyr - 1] = header_s[-1]
+            v_1D_p[ilyr - 1] = header_p[-1]
 
             # Convert velocity to slowness perturbation du
             # dv = -du*v_1D^2 => dv/v_1D = dln(v) = -du*v_1D, du = -dln(v)/v_1D
-            slowness_perturbation[ilyr - 1] = -1.0 * m_true / v_1D[ilyr - 1]
+            slowness_perturbation_s[ilyr - 1] = -1.0 * m_true_s / v_1D_s[ilyr - 1]
+            slowness_perturbation_p[ilyr - 1] = -1.0 * m_true_p / v_1D_p[ilyr - 1]
 
-    return slowness_perturbation, v_1D
+    return slowness_perturbation_s, v_1D_s, slowness_perturbation_p, v_1D_p
 
 
 def preprocess_model(model):
