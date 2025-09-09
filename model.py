@@ -38,7 +38,7 @@ import numpy as np
 from numpy.linalg import LinAlgError
 import pyvista as pv
 import gdrift
-import spherical
+import spherical_tools as st
 from scipy.interpolate import RBFInterpolator, CubicSpline
 from scipy.spatial import KDTree
 from pathlib import Path
@@ -250,9 +250,8 @@ def project_slowness_3D(
     radius_avg /= R_EARTH_KM
 
     # Convert LLNL rad/lon/lat to cartesian coordinates
-    cart_coord = spherical.sph2cart(
-        spherical.geo2sph(np.column_stack((radius_avg, lon, lat)))
-    )
+    cart_coord = st.geo2cart(np.column_stack((radius_avg, lon, lat)), degrees=True)
+
     # I am assuming radius_min, and radius_max are constant per layer for now
     assert radius_min.min() == radius_min.max()
     assert radius_max.min() == radius_max.max()
