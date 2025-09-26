@@ -52,17 +52,11 @@ lats = np.linspace(-90, 90, 181)
 lons = np.linspace(-180, 179, 360)  # includes both -180 and +179
 grid_lon, grid_lat = np.meshgrid(lons, lats)
 
-model = "HT_4e8"
+model = "HTK"
 reconstruction = "Z22"
 root_path = Path(
-    f"/Volumes/Navy/firedrake_simulations/{model}/{reconstruction}/LLNL_ToFi_3"
+    f"/Volumes/Grey/firedrake_simulations/{model}/{reconstruction}/LLNL_ToFi_3"
 )
-reparam_path = root_path / Path("reparam")
-dVp_reparam_path = reparam_path / Path("dVp")
-dVs_reparam_path = reparam_path / Path("dVs")
-tofi_path = root_path / Path("ToFi")
-dVp_tofi_path = tofi_path / Path("dVp")
-dVs_tofi_path = tofi_path / Path("dVs")
 types = ["Parm_layer_p", "ToFi_layer_p", "Parm_layer_s", "ToFi_layer_s"]
 names = [
     "dVp_reparam_percent",

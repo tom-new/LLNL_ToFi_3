@@ -67,7 +67,7 @@ import utils
 
 
 # --------------------------------------------------------------------------
-def init_model_parallel(comm=0):
+def init_model_parallel(comm=0, FIREDRAKE_PATH=None):
 
     myrank = comm.Get_rank()
     num_procs = comm.Get_size()
@@ -76,7 +76,7 @@ def init_model_parallel(comm=0):
 
     snd_model = None
     if myrank == 0:
-        snd_model = read_model(comm)
+        snd_model = read_model(comm, FIREDRAKE_PATH)
 
     keys = None
     if myrank == 0:
@@ -109,6 +109,7 @@ def init_model_parallel(comm=0):
     model = pv.UnstructuredGrid(
         rcv_model["cells"], rcv_model["celltypes"], rcv_model["points"]
     )
+    model.point_data["radii"] = rcv_model["radii"]
     model.point_data["du_s"] = rcv_model["du_s"]
     model.point_data["v_1D_s"] = rcv_model["v_1D_s"]
     model.point_data["du_p"] = rcv_model["du_p"]
@@ -122,18 +123,13 @@ def init_model_parallel(comm=0):
 # --------------------------------------------------------------------------
 
 
-def read_model(comm):
+def read_model(comm, FIREDRAKE_PATH):
 
     # USER MODIFICATION REQUIRED
     # Please provide the code to read in your model
     myrank = comm.Get_rank()
     print(f"Reading model on process {myrank}")
-    model = "HT_4e8"
-    reconstruction = "Z22"
-    model_path = Path(
-        f"/Volumes/Navy/firedrake_simulations/{model}/{reconstruction}/0Ma/output_0.pvtu"
-    )
-    model = pv.read(model_path)
+    model = pv.read(FIREDRAKE_PATH)
     model = model.clean()  # prune duplicate mesh points
     model.points /= 2.208  # normalise the model
     # drop unneeded arrays
@@ -213,6 +209,7 @@ def read_model(comm):
         "cells": np.array(model.cells),
         "celltypes": np.array(model.celltypes),
         "points": np.array(model.points),
+        "radii": np.linalg.norm(model.points, axis=1),
         "du_s": np.array(model["du_s"]),
         "v_1D_s": np.array(model["v_1D_s"]),
         "du_p": np.array(model["du_p"]),
@@ -257,8 +254,8 @@ def project_slowness_3D(
     assert radius_max.min() == radius_max.max()
 
     within_radius_min_max = np.logical_and(
-        model.preprocess["rads"] >= radius_min.min() / R_EARTH_KM,
-        model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM,
+        model["radii"] >= radius_min.min() / R_EARTH_KM,
+        model["radii"] <= radius_max.min() / R_EARTH_KM,
     )
 
     # broaden the search radius until there are points
@@ -267,8 +264,8 @@ def project_slowness_3D(
         radius_min -= thickness / 4
         radius_max += thickness / 4
         within_radius_min_max = np.logical_and(
-            model.preprocess["rads"] >= radius_min.min() / R_EARTH_KM,
-            model.preprocess["rads"] <= radius_max.min() / R_EARTH_KM,
+            model["radii"] >= radius_min.min() / R_EARTH_KM,
+            model["radii"] <= radius_max.min() / R_EARTH_KM,
         )
 
     # Build an array
@@ -361,7 +358,7 @@ def get_slowness_layer(model, radius_in, lat, lon, grid_spacing):
 
 
 # --------------------------------------------------------------------------
-def reparam(comm, radii, gc_lat, lon, reparam):
+def reparam(comm, radii, gc_lat, lon, reparam, FIREDRAKE_PATH, OUTPUT_PATH):
 
     myrank = comm.Get_rank()
     num_procs = comm.Get_size()
@@ -375,14 +372,14 @@ def reparam(comm, radii, gc_lat, lon, reparam):
     if reparam:
         # USER MODIFICATION REQUIRED
         # Initialize the seismic model (if necessary)
-        model = init_model_parallel(comm)
+        model = init_model_parallel(comm, FIREDRAKE_PATH)
         # END USER MODIFICATION REQUIRED
 
     v_1D_s = np.zeros(nl)
     v_1D_p = np.zeros(nl)
 
     # pre-process model in order to speed up the interpolation
-    preprocess_model(model)
+    # preprocess_model(model)
 
     # build a KDTree of the Firedrake mesh points for nearest-neighbor search
     # tree = KDTree(np.asarray(model["points"]))
@@ -464,6 +461,7 @@ def reparam(comm, radii, gc_lat, lon, reparam):
                     lon,
                     gc_lat,
                     OUTFILE_PARM_PREFIX + "_s",
+                    OUTPUT_PATH,
                     string=header_s,
                 )
                 utils.write_layer(
@@ -473,6 +471,7 @@ def reparam(comm, radii, gc_lat, lon, reparam):
                     lon,
                     gc_lat,
                     OUTFILE_PARM_PREFIX + "_p",
+                    OUTPUT_PATH,
                     string=header_p,
                 )
 
@@ -515,9 +514,3 @@ def reparam(comm, radii, gc_lat, lon, reparam):
             slowness_perturbation_p[ilyr - 1] = -1.0 * m_true_p / v_1D_p[ilyr - 1]
 
     return slowness_perturbation_s, v_1D_s, slowness_perturbation_p, v_1D_p
-
-
-def preprocess_model(model):
-    model.preprocess = {
-        "rads": np.sqrt(np.sum(model.points**2, axis=1)),
-    }

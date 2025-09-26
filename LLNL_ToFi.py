@@ -63,7 +63,8 @@ from utils import (
     np_UM_TZ,
     np_LM,
     n_m,
-    OUTPUT_PATH,
+    FIREDRAKE_PATH as DEFAULT_FIREDRAKE_PATH,
+    OUTPUT_PATH as DEFAULT_OUTPUT_PATH,
     OUTFILE_FILT_PREFIX,
     OUTFILE_PARM_PREFIX,
 )
@@ -73,9 +74,6 @@ import utils
 import model
 
 # -----------------------------------------------------------------------------
-
-# Make sure OUTPUT_PATH exists
-Path(OUTPUT_PATH).mkdir(exist_ok=True)
 
 
 def usage():
@@ -109,9 +107,16 @@ def main(argv):
 
     # Set defaults
     reparam = True
+    FIREDRAKE_PATH = DEFAULT_FIREDRAKE_PATH
+    OUTPUT_PATH = DEFAULT_OUTPUT_PATH
+    CONVERT_PATH = None
 
     try:
-        opts, args = getopt.getopt(argv, "hn", ["help", "no-reparam"])
+        opts, args = getopt.getopt(
+            argv,
+            "hni:o:c:",
+            ["help", "no-reparam", "input=", "output=", "convert-to-netcdf="],
+        )
     except getopt.GetoptError:
         usage()
         sys.exit(2)
@@ -121,11 +126,24 @@ def main(argv):
             sys.exit()
         elif opt in ("-n", "--no-reparam"):
             reparam = False
+        elif opt in ("-i", "--input"):
+            FIREDRAKE_PATH = Path(arg).expanduser()
+        elif opt in ("-o", "--output"):
+            OUTPUT_PATH = Path(arg).expanduser()
+        elif opt in ("-c", "--convert-to-netcdf"):
+            CONVERT_PATH = Path(arg).expanduser()
 
     # Initialize MPI
     comm = MPI.COMM_WORLD
     myrank = comm.Get_rank()
     num_procs = comm.Get_size()
+
+    # Make sure OUTPUT_PATH exists
+    if myrank == 0:
+        print(f"[rank {myrank}] creating output directory:", OUTPUT_PATH)
+        print(f"[rank {myrank}] cwd:", Path.cwd())
+        print(f"[rank {myrank}] resolved path:", OUTPUT_PATH.resolve())
+        OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 
     gd_lat = []
     lon = []
@@ -150,7 +168,7 @@ def main(argv):
 
     # Get model on LLNL grid
     [slowness_perturbation_s, v_1D_s, slowness_perturbation_p, v_1D_p] = model.reparam(
-        comm, radii, gc_lat, lon, reparam
+        comm, radii, gc_lat, lon, reparam, FIREDRAKE_PATH, OUTPUT_PATH
     )
 
     for ilyr in range(1, nl + 1):
@@ -245,6 +263,7 @@ def main(argv):
                 lon,
                 gc_lat,
                 OUTFILE_FILT_PREFIX + "_s",
+                OUTPUT_PATH,
             )
             utils.write_layer(
                 ilyr,
@@ -253,7 +272,10 @@ def main(argv):
                 lon,
                 gc_lat,
                 OUTFILE_FILT_PREFIX + "_p",
+                OUTPUT_PATH,
             )
+    if myrank == 0 and CONVERT_PATH is not None:
+        utils.convert_to_netcdf(OUTPUT_PATH, CONVERT_PATH)
 
 
 # -----------------------------------------------------------------------------
