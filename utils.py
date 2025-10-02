@@ -356,10 +356,10 @@ def convert_to_netcdf(txt_path, nc_path):
 
     types = ["Parm_layer_p", "ToFi_layer_p", "Parm_layer_s", "ToFi_layer_s"]
     names = [
-        "dVp_reparam_percent",
-        "dVp_tofi_percent",
-        "dVs_reparam_percent",
-        "dVs_tofi_percent",
+        "dlnVp_reparam_percent",
+        "dlnVp_tofi_percent",
+        "dlnVs_reparam_percent",
+        "dlnVs_tofi_percent",
     ]
 
     Vs = []

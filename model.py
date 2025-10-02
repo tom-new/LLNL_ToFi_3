@@ -279,7 +279,7 @@ def project_slowness_3D(
     )
 
     # Look for values withing the grid spacing
-    dists[np.logical_not(dists < grid_spacing)] = np.inf
+    # dists[np.logical_not(dists < grid_spacing)] = np.inf
 
     # idw
     # weights = 1.0 / (dists + 1e-12)
