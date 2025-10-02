@@ -128,37 +128,48 @@ def read_model(comm, FIREDRAKE_PATH):
     # USER MODIFICATION REQUIRED
     # Please provide the code to read in your model
     myrank = comm.Get_rank()
-    print(f"Reading model on process {myrank}")
+    print(f"#")
+    print(f"# [rank {myrank}] reading model from...\n#       {FIREDRAKE_PATH}")
     model = pv.read(FIREDRAKE_PATH)
     model = model.clean()  # prune duplicate mesh points
-    model.points /= 2.208  # normalise the model
-    # drop unneeded arrays
+
     for array_name in model.point_data.keys():
         if array_name not in ["FullTemperature_CG", "Temperature_Deviation_CG"]:
-            del model.point_data[array_name]
+            model.point_data.pop(array_name)
+
+    dc = utils.dimensional_constants()
+
     # calculate T and T_av, dropping arrays after they become unneeded
-    model.point_data["T"] = model["FullTemperature_CG"] * 3700 + 300
+    model.point_data["T"] = model["FullTemperature_CG"] * dc["T_0"] + dc["T_1"]
     model.point_data["dT"] = model["Temperature_Deviation_CG"] * (
         np.max(model["T"]) - np.min(model["T"])
     )
     model.point_data["T_av"] = model["T"] - model["dT"]
-    model.point_data["depth"] = (
-        (1 - np.linalg.norm(model.points, axis=1)) * R_EARTH_KM * 1.0e3
+    model.point_data["points_m"] = model.points * gdrift.R_earth / dc["r_max"]
+    model.point_data["depth"] = gdrift.R_earth - np.linalg.norm(
+        model["points_m"], axis=1
     )
+
+    # get depth profile of the Firedrake model and the layer average temperature at each depth
+    depth_profile = model.point_data["depth"].copy()
+    depth_profile = depth_profile.reshape(-1, 129).T.mean(axis=1)
+    depth_profile = np.flip(depth_profile)  # flip so that shallowest depth is first
+    T_profile = model.point_data["T"].copy()
+    T_profile = T_profile.reshape(-1, 129).T.mean(axis=1)
+    T_profile = np.flip(T_profile)  # flip so that shallowest depth is first
 
     # initialise thermodynamic model
     slb_pyrolite = gdrift.ThermodynamicModel(
         "SLB_16",
         "pyrolite",
-        temps=np.linspace(300, 4000),
-        depths=np.linspace(0, 2890e3),
+        depths=depth_profile,
     )
 
-    # A temperautre profile representing the mantle average temperature
+    # A temperature profile representing the mantle average temperature
     # This is used to anchor the regularised thermodynamic table (we make sure the seismic speeds are the same at those temperature for the regularised and unregularised table)
-    temperature_spline = gdrift.SplineProfile(
-        depth=np.asarray([0.0, 500e3, 2700e3, 3000e3]),
-        value=np.asarray([300, 1000, 3000, 4000]),
+    avg_temperature_spline = gdrift.SplineProfile(
+        depth=depth_profile,
+        value=T_profile,
     )
 
     # Regularising the table
@@ -167,8 +178,8 @@ def read_model(comm, FIREDRAKE_PATH):
     # v_s/v_p/rho versus temperature non-unique.
     linear_slb_pyrolite = gdrift.mineralogy.regularise_thermodynamic_table(
         slb_pyrolite,
-        temperature_spline,
-        regular_range={"v_s": [-0.5, 0], "v_p": [-0.5, 0.0], "rho": [-0.5, 0.0]},
+        avg_temperature_spline,
+        regular_range={"v_s": [-1.0, 0.0], "v_p": [-1.0, 0.0], "rho": [-1.0, 0.0]},
     )
 
     cammarano_q_model = "Q6"  # choose model from cammarano et al., 2003
@@ -183,9 +194,7 @@ def read_model(comm, FIREDRAKE_PATH):
     model.point_data["v_3D_s"] = linear_anelastic_slb_pyrolite.temperature_to_vs(
         temperature=np.array(model["T"]), depth=np.array(model["depth"])
     )
-    model.point_data["v_1D_s"] = linear_anelastic_slb_pyrolite.temperature_to_vs(
-        temperature=np.array(model["T_av"]), depth=np.array(model["depth"])
-    )
+    model.point_data["v_1D_s"] = utils.compute_mean_profile(model["v_3D_s"])
     model.point_data["du_s"] = (
         1 / model["v_3D_s"] - 1 / model["v_1D_s"]
     )  # calculate slowness perturbation
@@ -193,9 +202,7 @@ def read_model(comm, FIREDRAKE_PATH):
     model.point_data["v_3D_p"] = linear_anelastic_slb_pyrolite.temperature_to_vp(
         temperature=np.array(model["T"]), depth=np.array(model["depth"])
     )
-    model.point_data["v_1D_p"] = linear_anelastic_slb_pyrolite.temperature_to_vp(
-        temperature=np.array(model["T_av"]), depth=np.array(model["depth"])
-    )
+    model.point_data["v_1D_p"] = utils.compute_mean_profile(model["v_3D_p"])
     model.point_data["du_p"] = (
         1 / model["v_3D_p"] - 1 / model["v_1D_p"]
     )  # calculate slowness perturbation
@@ -208,15 +215,13 @@ def read_model(comm, FIREDRAKE_PATH):
     model = {
         "cells": np.array(model.cells),
         "celltypes": np.array(model.celltypes),
-        "points": np.array(model.points),
-        "radii": np.linalg.norm(model.points, axis=1),
+        "points": np.array(model.points * R_EARTH_KM / dc["r_max"]),
+        "radii": np.linalg.norm(model.points * R_EARTH_KM / dc["r_max"], axis=1),
         "du_s": np.array(model["du_s"]),
         "v_1D_s": np.array(model["v_1D_s"]),
         "du_p": np.array(model["du_p"]),
         "v_1D_p": np.array(model["v_1D_p"]),
     }
-
-    print(f"Model loaded on process {myrank}")
 
     # END USER MODIFICATION REQUIRED
 
@@ -244,7 +249,7 @@ def project_slowness_3D(
     #       => du = -dv/v_1D^2 = -dln(v)/v_1D
 
     # USER MODIFICATION REQUIRED
-    radius_avg /= R_EARTH_KM
+    # radius_avg /= R_EARTH_KM
 
     # Convert LLNL rad/lon/lat to cartesian coordinates
     cart_coord = st.geo2cart(np.column_stack((radius_avg, lon, lat)), degrees=True)
@@ -254,8 +259,8 @@ def project_slowness_3D(
     assert radius_max.min() == radius_max.max()
 
     within_radius_min_max = np.logical_and(
-        model["radii"] >= radius_min.min() / R_EARTH_KM,
-        model["radii"] <= radius_max.min() / R_EARTH_KM,
+        model["radii"] >= radius_min.min(),
+        model["radii"] <= radius_max.min(),
     )
 
     # broaden the search radius until there are points
@@ -264,30 +269,29 @@ def project_slowness_3D(
         radius_min -= thickness / 4
         radius_max += thickness / 4
         within_radius_min_max = np.logical_and(
-            model["radii"] >= radius_min.min() / R_EARTH_KM,
-            model["radii"] <= radius_max.min() / R_EARTH_KM,
+            model["radii"] >= radius_min.min(),
+            model["radii"] <= radius_max.min(),
         )
 
     # Build an array
-    dists, inds = KDTree(np.asarray(model.points[within_radius_min_max])).query(
+    dists, idxs = KDTree(np.asarray(model.points[within_radius_min_max])).query(
         cart_coord, k=1000
     )
 
     # Look for values withing the grid spacing
-    within_grid_spacing = dists < grid_spacing / R_EARTH_KM
-    dists[np.logical_not(within_grid_spacing)] = 1e10
+    dists[np.logical_not(dists < grid_spacing)] = np.inf
+
+    # idw
+    # weights = 1.0 / (dists + 1e-12)
+    # weights /= np.sum(weights, axis=1, keepdims=True)
+
+    # gaussian
+    weights = np.exp(-0.5 * (dists / (grid_spacing / 2.0)) ** 2)
+    weights /= np.sum(weights, axis=1, keepdims=True)
 
     # Do an interpolation of values within grid spacing
-    if True:
-        du_s = np.sum(
-            1 / dists * model["du_s"][within_radius_min_max][inds], axis=1
-        ) / np.sum(1 / dists, axis=1)
-        du_p = np.sum(
-            1 / dists * model["du_p"][within_radius_min_max][inds], axis=1
-        ) / np.sum(1 / dists, axis=1)
-    else:
-        du_s = np.average(model["du_s"][within_radius_min_max][inds], axis=1)
-        du_p = np.average(model["du_p"][within_radius_min_max][inds], axis=1)
+    du_s = np.sum(weights * model["du_s"][within_radius_min_max][idxs], axis=1)
+    du_p = np.sum(weights * model["du_p"][within_radius_min_max][idxs], axis=1)
 
     return du_s, du_p
 
@@ -302,7 +306,7 @@ def model_1D(model, radius):
     # Please modify the code to obtain the 1-D seismic velocity value for the given radius.
 
     # USER MODIFICATION REQUIRED
-    radius /= R_EARTH_KM
+    # radius /= R_EARTH_KM
     point = pv.PolyData([[radius, 0.0, 0.0]])
     v_1D_s = point.sample(model)["v_1D_s"][0]
     v_1D_p = point.sample(model)["v_1D_p"][0]

@@ -76,6 +76,25 @@ OUTFILE_PARM_PREFIX = "LLNL_G3D_JPS_Parm_layer"
 # --------------------------------------------------------------------------
 
 
+def dimensional_constants():
+    return {
+        "T_0": 3700,  # Used for dimensionalising temperature T_nd * T_0 + T_1
+        "T_1": 300,  # See above
+        "r_max": 2.208,  # Radius of the Earth in nd
+        "r_min": 1.208,  # Radius of the CMB in nd
+    }
+
+
+def compute_mean_profile(array):
+    """Compute the mean profile of an array over depth layers"""
+    return (
+        array.reshape(-1, 129)
+        .T.mean(axis=1, keepdims=True)
+        .repeat(array.shape[0] // 129, axis=1)
+        .T.reshape(-1)
+    )
+
+
 def read_coords():
 
     # Define filename for coordinates of the LLNL_G3D_JPS parametrization
@@ -344,8 +363,12 @@ def convert_to_netcdf(txt_path, nc_path):
     ]
 
     Vs = []
-    for type in types:
-        files = [p for p in txt_path.iterdir() if p.is_file() and type in p.name]
+    for ftype in types:
+        files = [
+            p
+            for p in txt_path.iterdir()
+            if p.is_file() and ftype in p.name and not p.name.startswith(("._"))
+        ]
         V, depths = grid_llnl_from_txt(files, grid_lon, grid_lat)
         Vs.append(V)
 

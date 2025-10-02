@@ -140,9 +140,8 @@ def main(argv):
 
     # Make sure OUTPUT_PATH exists
     if myrank == 0:
-        print(f"[rank {myrank}] creating output directory:", OUTPUT_PATH)
-        print(f"[rank {myrank}] cwd:", Path.cwd())
-        print(f"[rank {myrank}] resolved path:", OUTPUT_PATH.resolve())
+        print(f"#")
+        print(f"# [rank {myrank}] creating output directory...\n#       {OUTPUT_PATH}")
         OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 
     gd_lat = []
