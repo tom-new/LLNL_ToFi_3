@@ -325,8 +325,6 @@ def convert_to_netcdf(txt_path, nc_path):
         for file in files:
             # read whitespace-delimited text, skipping the first header row
             arr = np.genfromtxt(file, skip_header=1, usecols=(0, 1, 2), dtype=float)
-            if arr.ndim == 1:  # handle the single-row edge case
-                arr = arr[None, :]
 
             lon = arr[:, 0]
             lat = arr[:, 1]
@@ -335,10 +333,20 @@ def convert_to_netcdf(txt_path, nc_path):
             # ensure longitudes in [-180, 180)
             lon = ((lon + 180.0) % 360.0) - 180.0
 
+            # stitch across the dateline to avoid edge artifacts near ±180°
+            left_mask = lon > 180.0 - 8.0
+            right_mask = lon < -180.0 + 8.0
+
+            ext_lon = np.concatenate(
+                [lon, lon[left_mask] - 360.0, lon[right_mask] + 360.0]
+            )
+            ext_lat = np.concatenate([lat, lat[left_mask], lat[right_mask]])
+            ext_val = np.concatenate([val, val[left_mask], val[right_mask]])
+
             # interpolate onto the provided grid
             interp = griddata(
-                (lon, lat),
-                val,
+                (ext_lon, ext_lat),
+                ext_val,
                 (grid_lon, grid_lat),
                 method="cubic",
             )
